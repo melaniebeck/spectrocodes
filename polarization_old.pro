@@ -1,0 +1,462 @@
+; stokes vectors the Tinbergen way
+function calcstokes_tin, flux
+	Rq = sqrt((flux[0]/flux[4])/(flux[2]/flux[6]))
+	Ru = sqrt((flux[1]/flux[5])/(flux[3]/flux[7]))
+	q = (Rq - 1)/(Rq + 1)
+	u = (Ru - 1)/(Ru + 1)
+	stokes = [q,u]
+	return, stokes
+end
+; stokes vectors the Terry Jones way
+function calcstokes_tjj, flux
+	q = (flux[0]-flux[4])-(flux[2]-flux[6])/(flux[0]+flux[4]+flux[2]+flux[6])
+	u = (flux[1]-flux[5])-(flux[3]-flux[7])/(flux[1]+flux[5]+flux[3]+flux[7])
+	stokes = [q,u]
+	return, stokes
+end
+; stokes vectors the ESO/Claudia/Matt way
+function calcstokes_eso, flux
+	q = 0.5*(flux[0]-flux[4])/(flux[0]+flux[4])	- 0.5*(flux[2]-flux[6])/(flux[2]+flux[6])
+	u = 0.5*(flux[1]-flux[5])/(flux[1]+flux[5]) - 0.5*(flux[3]-flux[7])/(flux[3]+flux[7])
+	stokes = [q,u]
+	return, stokes
+end
+
+; I want this to return EVERYTHING -- make it a struct!!
+; INPUTS: Flux values of the 8 ord/ext beams, total intensity, err per PIXEL of the total intensity image, bin size: [x,y], elements to loop over: [x,y]
+; NOTE: Flux of the ord/ext beams must have same binning as Tot Intensity img
+; OUTPUTS: struct containing Q, U, P, P err, P STN, Theta, Theta err
+function polarization, flux, int, sig, bin
+	bflag = 0
+	; check size of flux array
+	sf = size(flux)
+	; define size of stokes vectors array
+	if n_elements(sf) gt 5 then s = fltarr(sf[1],sf[2],2) else s = fltarr(sf[1],2)
+	p = s
+	t = s
+	; check for multiple bin sizes
+	sb = size(bin)
+	if n_elements(sb) gt 4 then begin
+		bflag = 1
+		err = fltarr(sb[2])
+	endif
+	; if we have a 2D array ... 
+	if n_elements(sf) gt 5 then begin
+		for i=0,sf[1]-1 do begin
+			for j=0,sf[2]-1 do begin
+				s[i,j,*] = calcstokes_eso(flux[i,j,*])		; calculate stokes 
+				p = sqrt(s[*,*,0]^2+s[*,*,1]^2) 			; polarization
+				t = .5*atan(s[*,*,1]/s[*,*,0])*180/3.14		; theta in degrees	
+			endfor
+			; error per bin - many bin sizes
+			if bflag eq 1 then begin
+				err[i] = sqrt(bin[0,i]*bin[1,i])*sig		
+			endif 
+			; error per bin - 1 bin size for all
+			if (bflag eq 0 and i eq 0) then err = sqrt(bin[0]*bin[1])*sig 
+		endfor
+	; if we have a 1D array ... 
+	endif else begin
+		for i=0,sf[1]-1 do begin
+			s[i,*] = calcstokes_eso(flux[i,*])		; calculate stokes 
+			p = sqrt(s[*,0]^2+s[*,1]^2) 			; polarization
+			t = .5*atan(s[*,1]/s[*,0])*180/3.14		; theta in degrees
+				; error per bin - many bin sizes
+			if bflag eq 1 then begin
+				err[i] = sqrt(bin[0,i]*bin[1,i])*sig		
+			endif 
+			; error per bin - 1 bin size for all
+			if (bflag eq 0 and i eq 0) then err = sqrt(bin[0]*bin[1])*sig 
+		endfor	
+	endelse
+	stn = int/err			; tot int S/N
+	pstn = sqrt(2)*stn*p	; polarization S/N
+	pe = 1/(sqrt(2)*stn)	; polarization error
+	te = pe/(2*p)			; theta error
+;stop
+	if n_elements(sf) gt 5 then pol = create_struct('q',s[*,*,0],'u',s[*,*,1], $
+								'p',p,'pe',pe,'pstn',pstn,'t',t,'te',te,'stn',stn) $
+	else pol = create_struct('q',s[*,0],'u',s[*,1], 'p',p,'pe',pe,'pstn',pstn,'t',t, $
+								'te',te,'stn',stn)
+	return, pol
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+pro pol2d
+	; read in ord/ext beams
+	spawn,'ls stacked/[A,B]*2dstack2_6514.fits > stacked_sci.list'
+;	spawn,'ls stacked/*calint.fits > stacked.list'
+	readcol,'stacked_sci.list',format='a',sci_files
+
+	; read in total intensity images
+	spawn,'ls stacked/I*2dstack2_6514.fits > stacked_int.list'
+	readcol,'stacked_int.list',format='a',int_files	
+
+	; read in a test file to determine wavelength range(s)
+	temp=mrdfits(sci_files[0],0,h)
+	ss = size(temp)
+	disp=sxpar(h,'CD1_1')
+	pix=sxpar(h,'CRVAL1')
+	wlen = dindgen(ss[1])*disp+pix
+	y = dindgen(ss[2])
+	; x range of 2d spectrum to look at
+	xrange=where(wlen gt 4930. and wlen lt 5057.5)
+	lx = xrange[0]
+	; y range of 2d spectrum to look at
+	yrange=where(y gt 3 and y lt 74)
+	ly = yrange[0]
+	; portion of the spectrum to use as the background
+	srange=where(wlen gt 5025. and wlen lt 5500.)	
+	; bin sizes in the x and y directions for total image binning
+	bx = 8.
+	by = 10.	
+	; number of total bins in x and y directions
+	num_x = (n_elements(xrange))/bx		
+	num_y = (n_elements(yrange))/by
+
+	; declare variables for total image binning
+	spec=fltarr(ss[1],ss[2],n_elements(sci_files))		; 8 2d full spectrag
+	spec_c=fltarr(num_x*bx,num_y*by,n_elements(sci_files))
+	spec_b=fltarr(num_x,num_y,n_elements(sci_files))	; 8 binned cropped 2d spectra
+	stokes = fltarr(num_x,num_y,2)						; q,u for each bin/spectra
+	pol = fltarr(num_x,num_y)							; p for each bin/spectra
+
+	tot=fltarr(ss[1]+2,ss[2],n_elements(int_files))		; 5 2d full tot int spectra
+	tot_c=fltarr(num_x*bx,num_y*by,n_elements(int_files))
+	stn_pp = tot_c
+	tot_b=fltarr(num_x,num_y,n_elements(int_files))		; 5 binned cropped 2d tot int spectra
+	stn_pb = tot_b										; stn for each bin in tot int spec
+	sig = fltarr(n_elements(int_files))					; rms for each tot int spectrum	
+	err = sig											; bin error for each tot int spectrum
+
+tot_b2 = tot_b
+	; make 2d binned versions of the total intensity images
+	for i=0,n_elements(int_files)-1 do begin
+		tot[*,*,i] = mrdfits(int_files[i],0,h)
+		name=strsplit(int_files[i],'/.',/extract)
+		; rebin the 1d data
+		tot_c[*,*,i] = tot[xrange,yrange,i]
+		tot_b[*,*,i] = rebin(tot[xrange,yrange,i],num_x,num_y)
+		for j=0,num_x-1 do begin
+			for k=0,num_y-1 do begin
+				tot_b2[j,k,i] = total(tot[lx+j*bx:lx+(j+1)*bx-1, $
+										ly+k*by:ly+(k+1)*by-1,i])
+			endfor
+		endfor
+;stop
+;		writefits,name[0]+'/'+name[1]+'_2d_crop.fits',tot_c[*,*,i]
+		writefits,name[0]+'/rebin/'+name[1]+'_2d_rebin.fits',tot_b[*,*,i]
+
+		; Pixel Error: RMS PER PIXEL of each science frame
+		sig[i] = sigma(tot[srange,yrange,i])
+		; S/N PER PIXEL of each science frame
+		stn_pp[*,*,i] = tot_c[*,*,i]/sig[i]			;;; write to file??
+
+;		; Bin Error: err = sqrt(number of pixels)*RMS PER PIXEL
+;		err[i] = sig[i]/sqrt(bx*by)
+;		; S/N per bin per angle for the total intensity images
+;		stn_pb[*,*,i] = tot_b[*,*,i]/err[i] 		;;; write to file? 
+	endfor
+
+;stop
+spec_b2=spec_b
+	; read in all the stacked 2d spectra
+	for i=0,n_elements(sci_files)-1 do begin
+		spec[*,*,i] = mrdfits(sci_files[i],0,h)
+		name = strsplit(sci_files[i],'.',/extract)
+		; rebin the data in bx -- by pixels
+		spec_c[*,*,i] = spec[xrange,yrange,i]
+		spec_b[*,*,i] = rebin(spec[xrange,yrange,i],num_x,num_y)
+		for j=0,num_x-1 do begin
+			for k=0,num_y-1 do begin
+				spec_b2[j,k,i] = total(spec[lx+j*bx:lx+(j+1)*bx-1, $
+										ly+k*by:ly+(k+1)*by-1,i])
+			endfor
+		endfor
+;		writefits,name[0]+'_2d_crop.fits',spec_c[*,*,i],h
+		writefits,name[0]+'_2d_rebin.fits',spec_b[*,*,i],h
+		writefits,name[0]+'_2d_rebin2.fits',spec_b2[*,*,i],h
+	endfor
+
+;stop
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; polarization calculations
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; polarization for fully binned spectrum
+pol = polarization(spec_b2,tot_b2[*,*,0],sig[0],[bx,by])
+
+; region information 
+c1 = [[93,50],[93,40],[103,45],[110,46],[83,23],[91,20],[99,20],[107,20]];,[105,53]		; centers
+s1 = [[12,8],[12,12],[8,10],[6,8],[8,10],[8,16],[8,16],[8,16]]	;,[8,8]	; spatial extent (pixels)
+
+ss1 = size(c1)
+bbins = fltarr(ss1[2],n_elements(sci_files))
+tbins = fltarr(ss1[2])
+for i=0,ss1[2]-1 do begin
+	for j=0,n_elements(sci_files)-1 do begin
+		bbins[i,j] = total(spec_c[c1[0,i]-s1[0,i]/2:c1[0,i]+s1[0,i]/2-1, $
+									c1[1,i]-s1[1,i]/2:c1[1,i]+s1[1,i]/2-1, j])
+	endfor
+	tbins[i] = total(tot_c[c1[0,i]-s1[0,i]/2:c1[0,i]+s1[0,i]/2-1, $
+								c1[1,i]-s1[1,i]/2:c1[1,i]+s1[1,i]/2-1, 0])
+endfor
+bpol = polarization(bbins,tbins,sig[0],s1)
+;stop
+
+; create a polarization "image" from scratch
+bpol_img = spec_c[*,*,0]*0.
+for i=0,ss1[2]-1 do begin
+	if bpol.pstn[i] gt 1. then begin
+		bpol_img[c1[0,i]-s1[0,i]/2:c1[0,i]+s1[0,i]/2-1, $
+					c1[1,i]-s1[1,i]/2:c1[1,i]+s1[1,i]/2-1] = bpol.p[i]
+	endif
+endfor
+writefits,'bpol.fits',bpol_img
+;stop
+
+; print region files
+openw,out,'pol_spec.reg',/get_lun
+printf,out, 'global color=red dashlist=8 3 width=2 font="helvetica 10 normal roman" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1
+printf,out,'image'
+for i=0,ss1[2]-1 do begin
+	printf,out,'box('+strtrim(c1[0,i],2)+','+strtrim(c1[1,i],2)+',' $
+					 +strtrim(s1[0,i],2)+','+strtrim(s1[0,i],2)+',0)'
+	printf,out,'# text('+strtrim(c1[i],2)+','+strtrim(c1[i],2)+') text={'+strtrim(i+1,2)+'}'
+endfor
+close,out
+free_lun,out
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;	writefits,'q_'+strtrim(fix(bx),2)+'_'+strtrim(fix(by),2)+'.fits',stokes[*,*,0]
+;	writefits,'u_'+strtrim(fix(bx),2)+'_'+strtrim(fix(by),2)+'.fits',stokes[*,*,1]
+	writefits,'pol_products/pol_'+strtrim(fix(bx),2)+'_'+strtrim(fix(by),2)+'_R_cstn_Tin.fits',pol
+;	writefits,'perr_'+strtrim(fix(bx),2)+'_'+strtrim(fix(by),2)+'.fits',qerr
+	writefits,'pol_products/stn_'+strtrim(fix(bx),2)+'_'+strtrim(fix(by),2)+'_R_cstn_Tin.fits',stn
+
+	writefits,'pol_products/pol_'+strtrim(fix(bx),2)+'_'+strtrim(fix(by),2)+'_R_cstn_ESO.fits',pol2
+	writefits,'pol_products/stn_'+strtrim(fix(bx),2)+'_'+strtrim(fix(by),2)+'_R_cstn_ESO.fits',stn2
+stop
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+pro fig_boxes
+
+int=mrdfits('stacked/I_all_2dstack2_6514_crop.fits',0,h)
+ssi = size(int)
+
+int_s = gauss_smooth(int,1.5,kernel=3,/edge_truncate)
+
+; region information for upper lya shits 
+c1 = [[93,50],[93,40],[103,45],[110,46],[83,23],[91,20],[99,20],[107,20]];,[105,53]		; centers
+s1 = [[12,8],[12,12],[8,10],[6,8],[8,10],[8,16],[8,16],[8,16]]	;,[8,8]	; spatial extent (pixels)
+
+XC=(c1[0,*])*sxpar(h,'CD1_1') - sxpar(h,'CRPIX1')*sxpar(h,'CD1_1')+sxpar(h,'CRVAL1')
+XS1=(c1[0,*]-(s1[0,*]+1)/2)*sxpar(h,'CD1_1') - sxpar(h,'CRPIX1')*sxpar(h,'CD1_1')+sxpar(h,'CRVAL1')
+XS2=(c1[0,*]+(s1[0,*]+1)/2)*sxpar(h,'CD1_1') - sxpar(h,'CRPIX1')*sxpar(h,'CD1_1')+sxpar(h,'CRVAL1')
+YC=c1[1,*]+4
+YS=(s1[1,*])/2
+
+;pos1=[0.1,0.1,0.9,0.9]
+pos1=[0.1,0.35,0.9,0.65]
+pos2=[0.1,0.65,0.9,0.95]
+
+x=dindgen(ssi[1])*sxpar(h,'CD1_1') - sxpar(h,'CRPIX1')*sxpar(h,'CD1_1')+sxpar(h,'CRVAL1')
+y=dindgen(ssi[2])+4 
+
+;sc=dindgen(10)/10.
+sc=[0.0,.05,.1,.15,.2]
+sci=dblarr(5,3)
+
+sci[*,0]=sc
+sci[*,1]=sc
+sci[*,2]=sc
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+set_plot,'ps'
+device,/encap,filename='special_boxes2.ps',/color
+
+loadct,0
+tvimage,bytscl(int_s,min=0.,max=.003),POSITION=pos2,/keep_aspect_ratio
+loadct,0
+cgloadct,3,/reverse;, ncolors=100,clip=100,
+tvimage,bytscl(bpol_img,min=0.,max=.45),POSITION=pos1,/keep_aspect_ratio
+loadct,0
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+plot,x,y,POSITION=pos2,/noerase,/nodata,thick=4,charthick=4,xthick=4,ythick=4,charsize=1.5,xstyle=1,xtickformat='(a2)',ystyle=13
+
+for i=0,ss1[2]-1 do begin
+oplot,[XS1[i],XS2[i],XS2[i],XS1[i],XS1[i]], $
+      [YC[i]-YS[i],YC[i]-YS[i],YC[i]+YS[i],YC[i]+YS[i],YC[i]-YS[i]], $
+      color=cgcolor('red'),thick=2
+;xyouts,XC[i]-1,YC[i]-1,strtrim(i+1,2),charsize=.8,charthick=3,color=cgcolor('red'),/data
+endfor
+
+axis,4921.6,yaxis=0,yrange=[0.001,17.5],ystyle=1,charthick=4,charsize=1.5,ythick=4,/save
+axis,5048.2,yaxis=1,ystyle=1,ythick=4,/nodata,ytickformat='(a2)',/save
+
+oplot,dindgen(100)*0. + 4984.117,dindgen(100),thick=5,linestyle=2,color=1
+
+xyouts,4904,-7,'Arcseconds',charsize=1.5,charthick=4,/data,orientation=90
+
+;stop
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+plot,x,y,POSITION=pos1,/noerase,/nodata,thick=4,charthick=4,xthick=4,ythick=4,xtitle='Wavelength [Angstroms]',charsize=1.5,xstyle=1,ystyle=1,yr=[0.001,19.99]
+;axis,4922,yaxis=0,yrange=[0.001,17.5],ystyle=1,charthick=4,charsize=1.5,ythick=4,/save
+;axis,5048,yaxis=0,ystyle=1,charthick=4,charsize=1.5,ythick=4,/save
+
+oplot,dindgen(100)*0. + 4984.117,dindgen(100),thick=5,linestyle=2,color=1
+xyouts,5010,2,'S/N > 1.0',charthick=4,charsize=1.2
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+cgloadct,3,/reverse;clip=100,
+tvimage,bytscl(sci,min=0.,max=.45),POSITION=[0.15,0.12,0.9,0.2];,/noerase
+loadct,0
+
+plot,sc,sc/sc,POSITION=[0.15,0.12,0.9,0.2],/noerase,/nodata,thick=4,xtitle='P fraction',charsize=1.2,xstyle=1,ystyle=4,charthick=4,ytickformat='(a2)',xr=[0,.25]
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+device,/close
+set_plot,'X'
+stop
+
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+function polcalc2, a1,a2,a3,a4,b1,b2,b3,b4
+	f1 = (a1-b1)/(a1+b1)
+	f2 = (a2-b2)/(a2+b2)
+	f3 = (a3-b3)/(a3+b3)
+	f4 = (a4-b4)/(a4+b4)
+	q = 0.5*f1 - 0.5*f3
+	u = 0.5*f2 - 0.5*f4
+	return, sqrt(q^2 + u^2)
+end
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+pro mc
+	; read in ord/ext beams
+	spawn,'ls stacked/crop/[A,B]*2dstack2_6514_crop.fits > stacked_sci.list'
+	readcol,'stacked_sci.list',format='a',sci_files
+	
+	; read in the sig maps for each ord/ext beam
+	spawn,'ls stacked/crop/[A,B]*2dstack2_6514_sig_crop.fits > stacked_sig.list'
+	readcol,'stacked_sig.list',format='a',sig_files
+
+	; read in test image for array sizes
+	test=mrdfits(sci_files[0],0,h)
+	ss=size(test)
+	; let's start with the fully binned image : 
+	bx = 8.
+	by = 10.	
+	; number of total bins in x and y directions
+	num_x = ss[1]/bx		
+	num_y = ss[2]/by
+
+	spec = fltarr(ss[1],ss[2],n_elements(sci_files))
+	spec_b = fltarr(num_x,num_y,n_elements(sci_files))
+	sigs = fltarr(ss[1],ss[2],n_elements(sci_files))
+	sigs_b = fltarr(num_x,num_y,n_elements(sci_files))
+
+	; read in all the ord/ext beams and their corresponding sigma maps
+	a1 = mrdfits(sci_files[0],0,h)
+	a2 = mrdfits(sci_files[1],0,h)
+	a3 = mrdfits(sci_files[2],0,h)
+	a4 = mrdfits(sci_files[3],0,h)
+	b1 = mrdfits(sci_files[4],0,h)
+	b2 = mrdfits(sci_files[5],0,h)
+	b3 = mrdfits(sci_files[6],0,h)
+	b4 = mrdfits(sci_files[7],0,h)
+
+	sa1 = mrdfits(sig_files[0],0,h)
+	sa2 = mrdfits(sig_files[1],0,h)
+	sa3 = mrdfits(sig_files[2],0,h)
+	sa4 = mrdfits(sig_files[3],0,h)
+	sb1 = mrdfits(sig_files[4],0,h)
+	sb2 = mrdfits(sig_files[5],0,h)
+	sb3 = mrdfits(sig_files[6],0,h)
+	sb4 = mrdfits(sig_files[7],0,h)
+
+	; rebin the data
+	ra1 = rebin(a1,num_x,num_y)
+	ra2 = rebin(a2,num_x,num_y)
+	ra3 = rebin(a3,num_x,num_y)
+	ra4 = rebin(a4,num_x,num_y)
+	rb1 = rebin(b1,num_x,num_y)
+	rb2 = rebin(b2,num_x,num_y)
+	rb3 = rebin(b3,num_x,num_y)
+	rb4 = rebin(b4,num_x,num_y)
+
+	rsa1 = sqrt(rebin(sa1^2,num_x,num_y))/sqrt(bx*by)
+	rsa2 = sqrt(rebin(sa2^2,num_x,num_y))/sqrt(bx*by)
+	rsa3 = sqrt(rebin(sa3^2,num_x,num_y))/sqrt(bx*by)
+	rsa4 = sqrt(rebin(sa4^2,num_x,num_y))/sqrt(bx*by)
+	rsb1 = sqrt(rebin(sb1^2,num_x,num_y))/sqrt(bx*by)
+	rsb2 = sqrt(rebin(sb2^2,num_x,num_y))/sqrt(bx*by)
+	rsb3 = sqrt(rebin(sb3^2,num_x,num_y))/sqrt(bx*by)
+	rsb4 = sqrt(rebin(sb4^2,num_x,num_y))/sqrt(bx*by)
+
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	; Run Simulation
+	n = 10000
+	; calc actual polarization 
+	orig_p = polcalc2(ra1,ra2,ra3,ra4,rb1,rb2,rb3,rb4)
+	
+	sim_p = dblarr(num_x,num_y,n)
+
+	ff=dindgen(10)*1000.
+	for j=1,n do begin
+		; simulate a NEW value of each of the ord/ext beams by adding to that value a small deviation 
+		; based on the a value of 
+		ra1_s = ra1 + (randomu(seed,num_x,num_y)-0.5d)*rsa1*2
+		ra2_s = ra2 + (randomu(seed,num_x,num_y)-0.5d)*rsa2*2
+		ra3_s = ra3 + (randomu(seed,num_x,num_y)-0.5d)*rsa3*2
+		ra4_s = ra4 + (randomu(seed,num_x,num_y)-0.5d)*rsa4*2
+		rb1_s = rb1 + (randomu(seed,num_x,num_y)-0.5d)*rsb1*2
+		rb2_s = rb2 + (randomu(seed,num_x,num_y)-0.5d)*rsb2*2
+		rb3_s = rb3 + (randomu(seed,num_x,num_y)-0.5d)*rsb3*2
+		rb4_s = rb4 + (randomu(seed,num_x,num_y)-0.5d)*rsb4*2
+
+		sim_p[*,*,j-1] = polcalc2(ra1_s,ra2_s,ra3_s,ra4_s,rb1_s,rb2_s,rb3_s,rb4_s)
+ 
+		fr=where(ff eq j)
+        if fr[0] gt 0. then print,'done ',ff[fr]/10000.,'%'
+	endfor
+
+stop
+
+	for i=0,num_x-1 do begin
+		for j=0,num_y-1 do begin 
+			plothist,sim_p[i,j,*],xhist,yhist,bin=0.01,/fill,fcolor=230,xr=[0,1.]
+			oplot,yhist*0.+ orig_p[i,j],yhist,thick=5      
+
+			percentiles = PERCENTILES(sim_p[i,j,*],VALUE=[0.025,0.16,0.5,0.84,0.975])
+     		sigma[i,j] = (orig_p[i,j] - percentiles[1]) > (percentiles[3] - orig_p[i,j])
+		endfor
+	endfor
+;		 	plothist, sim_p[i,j,*], xhist, yhist, BIN=0.01, /FILL, $
+;				/fline,forientation=45,fthick=1,fspacing=0.1,fcolor=230, $
+;				xthick=3,ythick=3,thick=4,charsize=1.5, charthick=3, $
+;				xtitle='Polarization Fraction',xr=[0,1],/noplot,/nan
+
+stop
+
+end
+
