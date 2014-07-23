@@ -9,103 +9,105 @@ pro fig2d, date, bin
 ;int_file='stacked/'+date+'/rebin/Iall_stack_'+date+'_2d_rebin.fits'
 ;int1d_file='stacked/'+date+'/Iall_stack_'+date+'_1d.fits'
 
-pol_file='pol_products/'+date+'/pol_'+date+'.fits'
-stn_file='pol_products/715/MC_polstn68_715_noacorr.fits'
-int_file='stacked/'+date+'/rebin/Iall_stack_715_2d_rebin.fits'
-
-int1d_file='stacked/7814/Iall_stack_7814_1d.fits'
-
-; read in appropriate files
-pol=mrdfits(pol_file)
-stn=mrdfits(stn_file)
-int=mrdfits(int_file)
-int1d=mrdfits(int1d_file,0,h)
-
-stncut = 1.0
-ss=size(pol)
-
-; remove any nans
-nan=finite(pol,/nan)
-pol[where(nan eq 1)]=0.
-; ceate array where only pol above stn cut remains
-pol_sig=pol*0.-100
-pol_sig[where(stn gt stncut)]=pol[where(stn gt stncut)]
-;pol_sig[where(pol_sig gt 0.35)]=0.
-pol_sig[0:9,*]=0.
-pol_sig[15:24,*] = 0.
-
-; page position of fractional polarization
-pos_p=[0.15,0.4,0.9,0.65]
-; page position of total intensity image
-pos_i=[0.15,0.65,0.9,0.9]
-; x axis for the the above plots
-x=dindgen(ss[1])*sxpar(h,'CD1_1')*bin + 4930.-bin/2.
-; y axies for the above plots (don't understand how claudia made this one) 
-y=dindgen(ss[1])/35.*0.25*13.*6
-
-;sc=dindgen(10)/10.
-;sc=[0.,.05,.1,.15,.2,.25,.3]
-
-; crazy shit that claudia came up with to make the Frac Pol bar at the bottom
-;max_plevel=.12
-;sc=[0.,.02,.04,.06,.08,.1]
-max_plevel=.35
-sc=[0.,.05,.10,.15,.2,.25,.3]
-sci=dblarr(n_elements(sc),3)
-sci[*,0]=sc
-sci[*,1]=sc
-sci[*,2]=sc
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; START THE 2D FIGURE
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-set_plot,'ps'
-device,filename='fig2d_'+date+'_2.ps',/color,/encap;'_'+string(stncut,format='(D3.1)')+
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; DRAW 2D IMAGE SPECTRA
-loadct,0
-cgloadct,8,clip=100,/reverse;, ncolors=100
-tvimage,bytscl(pol_sig,min=0.,max=max_plevel),POSITION=pos_p
-loadct,0
-;tvimage,bytscl(-int,min=-0.0045,max=-0.001),POSITION=pos_i;,/noerase -- for 7814
-tvimage,bytscl(-int,min=-0.0035,max=0.0004),POSITION=pos_i;,/noerase  -- for 6514
-;tvimage,bytscl(-int,min=-0.007,max=0.002),POSITION=pos_i;,/noerase -- for 714
-loadct,0
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; DRAW AXES FOR POLARIZATION PLOT
-plot,x,y,POSITION=pos_p,/noerase,/nodata,thick=4,charthick=4,xthick=4,ythick=4, $
-	 xtitle='Wavelength [Angstroms]',charsize=1.5,xstyle=1,yr=[0.001,19.99],ystyle=1
-oplot,dindgen(100)*0. + 4981.5,dindgen(100),thick=5,linestyle=2,color=1
-
-xyouts,5010,5,'Polarization',charsize=1.2,charthick=4,/data
-xyouts,5010,2,'S/N>1.0',charsize=1.2,charthick=4,/data
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; DRAW AXES FOR INTENSITY PLOT
-plot,x,y,POSITION=pos_i,/noerase, /nodata,thick=4,charthick=4, xthick=4,ythick=4, $
-	 charsize=1.5,xstyle=1,xtickformat='(a2)',yr=[0.001,19.99],ystyle=1
-
-xyouts,5010,2,'Intensity',charsize=1.2,charthick=4,/data
-xyouts,4915,-10,'Arcseconds',charsize=1.5,charthick=4,/data,orientation=90
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; DRAW FRACTIONAL POLARIZATION BAR AT BOTTOM
-cgloadct,8,clip=100,/reverse
-tvimage,bytscl(sci,min=0.,max=max_plevel),POSITION=[0.15,0.12,0.9,0.2];,/noerase
-loadct,0
-
-plot,sc,sc/sc,POSITION=[0.15,0.12,0.9,0.2],/noerase,/nodata,thick=4, $
-	 xtitle='P fraction',charsize=1.2,xstyle=1,ystyle=4,charthick=4, $
-	 ytickformat='(a2)',xr=[0,max_plevel]
-
-device,/close
-set_plot,'X'
-;spawn,'ps2pdf'figure_airm',1
+	pol_file='pol_products/pol_'+date+'_2.fits'		;'+date+'/
+	stn_file='pol_products/MC_polstn68_715_2.fits'
+	int_file='stacked/'+date+'/rebin/Iall_stack_715_2d_rebin_2.fits'
+	
+	int1d_file='stacked/'+date+'/Iall_stack_'+date+'_1d_2.fits'
+	
+	; read in appropriate files
+	pol=mrdfits(pol_file)
+	stn=mrdfits(stn_file)
+	int=mrdfits(int_file)
+	int1d=mrdfits(int1d_file,0,h)
+	
+	stncut = 1.0
+	ss=size(pol)
+	
+	; remove any nans
+	nan=finite(pol,/nan)
+	pol[where(nan eq 1)]=0.
+	; ceate array where only pol above stn cut remains
+	pol_sig=pol*0.-100
+	pol_sig[where(stn gt stncut)]=pol[where(stn gt stncut)]
+	pol_sig[where(pol_sig gt 0.35)]=0.
+	;pol_sig[0:9,*]=0.
+	;pol_sig[15:24,*] = 0.
+	
+	; page position of fractional polarization
+	pos_p=[0.13,0.4,0.87,0.65]
+	; page position of total intensity image
+	pos_i=[0.13,0.65,0.87,0.9]
+	; x axis for the the above plots
+	x = dindgen(ss[1])*sxpar(h,'CD1_1')*bin + 4930.+bin/2.
+	; y axis for the above plots 
+	y = dindgen(ss[2])*0.25
+	
+	;sc=dindgen(10)/10.
+	;sc=[0.,.05,.1,.15,.2,.25,.3]
+	
+	; crazy shit that claudia came up with to make the Frac Pol bar at the bottom
+	;max_plevel=.12
+	;sc=[0.,.02,.04,.06,.08,.1]
+	max_plevel=.35
+	sc=[0.,.05,.10,.15,.2,.25,.3]
+	sci=dblarr(n_elements(sc),3)
+	sci[*,0]=sc
+	sci[*,1]=sc
+	sci[*,2]=sc
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	; START THE 2D FIGURE
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	set_plot,'ps'
+	device,filename='fig2d_'+date+'_7.23.14.ps',/color,/encap;'_'+string(stncut,format='(D3.1)')+
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	; DRAW 2D IMAGE SPECTRA
+	loadct,0
+	cgloadct,8,clip=100,/reverse;, ncolors=100
+	tvimage,bytscl(pol_sig,min=0.,max=max_plevel),POSITION=pos_p,/keep_aspect_ratio
+	loadct,0
+	;tvimage,bytscl(-int,min=-0.0045,max=-0.001),POSITION=pos_i;,/noerase -- for 7814
+	tvimage,bytscl(-int,min=-0.0035,max=0.0004),POSITION=pos_i,/keep_aspect_ratio;,/noerase  -- for 6514
+	;tvimage,bytscl(-int,min=-0.007,max=0.002),POSITION=pos_i;,/noerase -- for 714
+	loadct,0
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	; DRAW AXES FOR POLARIZATION PLOT
+	plot, x, y, POSITION=pos_p, /noerase, $
+		  /nodata, thick=4, charthick=4, xthick=4, ythick=4, ystyle=1, $
+		  xtitle='Wavelength [Angstroms]', charsize=1.5, xstyle=1, yr=[0.001,17.99]
+	oplot, dindgen(100)*0. + 4981.5,dindgen(100),thick=5,linestyle=2,color=1
+	
+	xyouts,5000,5,'Polarization',charsize=1.2,charthick=4,/data
+	xyouts,5000,2,'S/N>1.0',charsize=1.2,charthick=4,/data
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	; DRAW AXES FOR INTENSITY PLOT
+	plot, x, y, POSITION=pos_i, /noerase,  $
+		  /nodata, thick=4, charthick=4, xthick=4, ythick=4, ystyle=1, $
+		  charsize=1.5, xstyle=1, xtickformat='(a2)', yr=[0.001,17.99]
+	
+	xyouts,5000,2,'Intensity',charsize=1.2,charthick=4,/data
+	xyouts,4922,-10,'Arcseconds',charsize=1.5,charthick=4,/data,orientation=90
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	; DRAW FRACTIONAL POLARIZATION BAR AT BOTTOM
+	cgloadct,8,clip=100,/reverse
+	tvimage,bytscl(sci,min=0.,max=max_plevel),POSITION=[0.15,0.15,0.85,0.25];,/noerase
+	loadct,0
+	
+	plot,sc,sc/sc,POSITION=[0.15,0.15,0.85,0.25],/noerase,/nodata,thick=4, $
+		 xtitle='P fraction',charsize=1.2,xstyle=1,ystyle=4,charthick=4, $
+		 ytickformat='(a2)',xr=[0,max_plevel]
+	
+	device,/close
+	set_plot,'X'
+	;spawn,'ps2pdf'figure_airm',1		[0.8,0.3,0.9,0.9]
 stop
 end
-
+	
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 pro fig1d
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -262,12 +264,50 @@ set_plot,'X'
 
 end
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+pro tot_int, date
+
+	tot=mrdfits('stacked/'+date+'/crop/Iall_stack_'+date+'_2d_crop_2.fits')
+	ss=size(tot)
+
+	tot1d=mrdfits('stacked/'+date+'/Iall_stack_'+date+'_1d_2.fits',0,h)
+
+	wlen=dindgen(n_elements(tot1d))*sxpar(h,'CD1_1') + sxpar(h,'CRVAL1')- $
+		 sxpar(h,'CRPIX1')*sxpar(h,'CD1_1')
+	y=dindgen(ss[2])*0.25
+
+	pos_i=[0.15,0.55,0.9,0.9]
+
+	set_plot,'PS'
+	device,filename='total_intensity_7.23.14.ps',/color,/encap
+	loadct,0
+	;cgloadct,8,clip=100,/reverse;, ncolors=100
+	; sigma = 0.85 corresponds to FWHM = 0.5"
+	totsm = gauss_smooth(tot,.85,/edge_truncate)
+	tvimage,bytscl(-totsm,min=-0.0035,max=0.0004),POSITION=pos_i,/keep_aspect_ratio
 
 
+	plot,wlen[where(wlen gt 4930 and wlen lt 5032.)],y,POSITION=pos_i,/noerase, $
+		 /nodata,thick=4,charthick=4,xthick=4,ythick=4, $
+		 xtitle='Wavelength [Angstroms]',charsize=1.5,xstyle=1,yr=[0.001,17.5],ystyle=1
+;	plots,[4930.5,4930.5],[0,20],/DATA,thick=5;,color=240
+;	plots,[5031.5,5031.5],[0,20],/DATA,thick=5;,color=240
+
+	plots,[5034.,5034.],[2.75,7.],/DATA,thick=10;,color=240
+	xyouts,5036.,4.5,'B',/DATA,charthick=4,charsize=1.5
+	plots,[5034.,5034.],[8.75,13.5],/DATA,thick=10;,color=240
+	xyouts,5036.,10.5,'A',/DATA,charthick=4,charsize=1.5
+
+	oplot,dindgen(100)*0. + 4981.5,dindgen(100),thick=5,linestyle=2,color=cgcolor('red')
+	xyouts,4919,3,'Arcseconds',charsize=1.5,charthick=4,/data,orientation=90
+
+;	xyouts,5010,2,'Intensity',charsize=1.2,charthick=4,/data
 
 
+	device,/close
+	set_plot,'X'
+stop
 
+end
 
-
-
-
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

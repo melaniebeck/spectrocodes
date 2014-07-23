@@ -881,15 +881,15 @@ pro reduction
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;stop
 	; perform SKY SUBTRACTION
-	spawn,'ls '+dirs+'/2dspectra/N*slit[1,2]*wc.fits > 2dsci_data.lis'
-	spawn,'ls '+dirs+'/2dspectra/N*slit[3,4]*wc.fits > 2dsky_data.lis'
-	sky_subtract, '2dsci_data.lis', '2dsky_data.lis'
+;	spawn,'ls '+dirs+'/2dspectra/N*slit[1,2]*wc.fits > 2dsci_data.lis'
+;	spawn,'ls '+dirs+'/2dspectra/N*slit[3,4]*wc.fits > 2dsky_data.lis'
+;	sky_subtract, '2dsci_data.lis', '2dsky_data.lis'
 
 	; Correct for ATMOSPHERIC EXTINCTION
-	spawn,'ls '+dirs+'/2dspectra/N*slit[1,2]*wc_ssfit2.fits > sci_data.lis'
-	correct_atmos, 'sci_data.lis',/twod
-	spawn,'ls '+dirs+'/1dspectra/N*slit[1,2]*wc_1d_ssfit2.fits > sci_data.lis'
-	correct_atmos, 'sci_data.lis'
+;	spawn,'ls '+dirs+'/2dspectra/N*slit[1,2]*wc_ssfit2.fits > sci_data.lis'
+;	correct_atmos, 'sci_data.lis',/twod
+;	spawn,'ls '+dirs+'/1dspectra/N*slit[1,2]*wc_1d_ssfit2.fits > sci_data.lis'
+;	correct_atmos, 'sci_data.lis'
 ;stop
 	suffix = '715'
 	; STACK the spectra in IRAF

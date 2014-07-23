@@ -72,7 +72,10 @@ function mc_sim, hwps, sigs, pol, coord, date, PLOT=PLOT
 ;		device,filename=name,/color,/encap
 		; plot the histogram of simulated polarizations
 		plothist,sim_p,xhist,yhist,bin=0.01,/fill,fcolor=230,xr=[0,1.], $
-				 title=title,xtit='Polarization fraction'
+				 xtit='Polarization fraction'
+		; overplot the mean and median of the simulated polarization dist
+		oplot,yhist*0.+avg,yhist,thick=2,color=cgcolor('red')
+		oplot,yhist*0.+med,yhist,thick=2,color=cgcolor('green')
 		; overplot the original measured polarization
 		oplot,yhist*0.+pol,yhist,thick=2,color=cgcolor('black') 
 		; overplot the avg sim pol +- std of the histogram
@@ -84,8 +87,8 @@ function mc_sim, hwps, sigs, pol, coord, date, PLOT=PLOT
 		oplot,yhist*0.+(avg-2*std),yhist,thick=2,linestyle=1, $
 			  color=cgcolor('magenta')
 		; overplot the percentiles of the histogram
-		oplot,yhist*0.+percent[2],yhist,thick=2,linestyle=3, $
-			  color=cgcolor('orange')
+;		oplot,yhist*0.+percent[2],yhist,thick=2,linestyle=3, $
+;			  color=cgcolor('orange')
     	oplot,yhist*0.+percent[1],yhist,thick=2,linestyle=2, $
 			  color=cgcolor('blue')
    		oplot,yhist*0.+percent[3],yhist,thick=2,linestyle=2, $
@@ -94,6 +97,13 @@ function mc_sim, hwps, sigs, pol, coord, date, PLOT=PLOT
 			  color=cgcolor('magenta')
  		oplot,yhist*0.+percent[4],yhist,thick=2,linestyle=2, $
 			  color=cgcolor('magenta')
+
+		items = ['Raw P', 'Mean', 'Median', 'Geom (68%)', 'Geom (95%)', $
+				 'PDF (68%)', 'PDF (95%)']
+		lines = [0,0,0,1,1,2,2]
+		colors = [cgcolor('black'), cgcolor('red'), cgcolor('green'), cgcolor('blue'), $
+				 cgcolor('magenta'), cgcolor('blue'), cgcolor('magenta')]
+		al_legend,items, linestyle=lines,color=colors,linsize=.5,/right
 		device,/close
 		set_plot,'X
 ;stop
@@ -121,13 +131,17 @@ pro pol2d, date, TWOD=twod
 	; choose bin sizes
 	bx = 8.
 	by = 10.
+	start_wlen = 4930.
+	end_wlen = 5032.
 	; read in a test file to determine wavelength range(s)
 	temp=mrdfits(sci_files[0],0,h)
 	ss = size(temp)
-	wlen = dindgen(ss[1])*sxpar(h,'CD1_1')+sxpar(h,'CRVAL1')
+	wlen = dindgen(ss[1])*sxpar(h,'CD1_1')+sxpar(h,'CRVAL1')- $
+		   sxpar(h,'CRPIX1')*sxpar(h,'CD1_1')
 	y = dindgen(ss[2])
 	; x range of 2d spectrum to look at
-	xrange=where(wlen gt 4930. and wlen lt 5057.5)
+	xrange=where(wlen gt start_wlen and wlen lt end_wlen)
+;stop
 	lx = xrange[0]
 	; y range of 2d spectrum to look at
 	yrange=where(y gt 3 and y lt 74)
@@ -135,100 +149,138 @@ pro pol2d, date, TWOD=twod
 	; number of total bins in x and y directions
 	num_x = (n_elements(xrange))/bx		
 	num_y = (n_elements(yrange))/by
-
+stop
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	; declare variables for science spectra binning
 	spec=fltarr(ss[1],ss[2],n_elements(sci_files))
-	spec1d=fltarr(ss[1],n_elements(sci_files))	
-	spec1d_c=fltarr(num_x*bx,n_elements(sci_files))
-	spec1d_b=fltarr(num_x,n_elements(sci_files))
+	spec1d_t=fltarr(num_x*bx,n_elements(sci_files))	
+	spec1d_b=fltarr(num_x*bx,n_elements(sci_files))
+
 	spec_c=fltarr(num_x*bx,num_y*by,n_elements(sci_files))
 	spec_b=fltarr(num_x,num_y,n_elements(sci_files))
 	; declare variables for sigma binning	
 	sigs=fltarr(ss[1],ss[2],n_elements(sci_files))	
-	sigs1d_b=fltarr(num_x,n_elements(sci_files))	
+	sigs1d_t=fltarr(num_x*bx,n_elements(sci_files))	
+	sigs1d_b=fltarr(num_x*bx,n_elements(sci_files))	
+
 	sigs_c=fltarr(num_x*bx,num_y*by,n_elements(sci_files))
 	sigs_b=fltarr(num_x,num_y,n_elements(sci_files))
+	sigs_b2=sigs_b
 	; declare variables for polarization
 	pol = fltarr(num_x,num_y)
 	perr = fltarr(num_x,num_y,2)	
 	pol1d = fltarr(num_x)
 	perr1d = fltarr(num_x,2)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	; CROP & REBIN 2D TOTAL INTENSITY SPECTRUM 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	tot_a = mrdfits('stacked/'+date+'/Iall_stack_'+date+'_2d.fits',0,hta)
+	ss = size(tot_a)
+	tot1d_a = fltarr(ss[1])
+	tot_c = fltarr(num_x*bx,num_y*by)
+	tot_d = fltarr(num_x,num_y)
 
-	; read in and rebin the total intensity spectrum for later
-	tot = mrdfits('stacked/'+date+'/Iall_stack_'+date+'_2d.fits',0,ht)
-;	tot = mrdfits('stacked/'+date+'/noacorr/Iall_stack_noacorr.fits',0,ht)
-	sst = size(tot)
-	tot_c = tot[545:744,4:73]
-	tot_b = rebin(tot[545:744,4:73],num_x,num_y)
-	writefits,'stacked/'+date+'/crop/Iall_stack_'+date+'_2d_crop.fits',tot_c,ht
-	writefits,'stacked/'+date+'/rebin/Iall_stack_'+date+'_2d_rebin.fits',tot_b,ht
+	; wavelength range of 2d spectrum
+	wlen1 = dindgen(ss[1])*sxpar(hta,'CD1_1')+sxpar(hta,'CRVAL1')- $
+		   	   sxpar(hta,'CRPIX1')*sxpar(hta,'CD1_1')
+	; x range of 2d spectrum to look at
+	xrange1=where(wlen1 gt start_wlen and wlen1 lt end_wlen)
+
+	; extract 1d spectrum for use later
+	for i=0,ss[1]-1 do tot1d_a[i]=total(tot_a[i,4:73])
+	writefits,'stacked/'+date+'/Iall_stack_'+date+'_1d_2.fits',tot1d_a,hta
+;stop
+	; test wlen range with some plots
+	plot,wlen1,tot1d_a,xr=[4800,5200]
+	oplot,dindgen(100)*0. + 4981.5,dindgen(100),thick=2;,linestyle=2,color=1
+
+	; crop the 2d total intensity spectrum
+	tot_c = tot_a[xrange1,4:73]
+	; rebin the 2d tot int spectrum
+	tot_b = rebin(tot_a[xrange1,4:73],num_x,num_y)
+
+	writefits,'stacked/'+date+'/crop/Iall_stack_'+date+'_2d_crop_2.fits',tot_c,hta
+	writefits,'stacked/'+date+'/rebin/Iall_stack_'+date+'_2d_rebin_2.fits',tot_b,hta
+;stop
 ;	writefits,'stacked/'+date+'/noacorr/crop/Iall_stack_noacorr_2d_crop.fits',tot_c,ht
 ;	writefits,'stacked/'+date+'/noacorr/rebin/Iall_stack_noacorr_2d_rebin.fits',tot_b,ht
 
-;	; create a 1d total intensity spectrum 
-;	tot_1d = fltarr(sst[1])
-;	tot_bot = tot_1d
-;	tot_top = tot_1d
-;	for i=0,sst[1]-1 do begin
-;		; 1d tot intensity over the whole spatial range
-;		tot_1d[i] = total(tot[i,yrange])
-;		; 1d tot intensity for the bottom bright line
-;		tot_bot[i] = total(tot[i,4:34])
-;		; 1d tot intensity for the top bright line
-;		tot_top[i] = total(tot[i,35:73])
-;	endfor
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	; CREATE 1D TOTAL INTENSITY SPECTRA -- TOP AND BOTTOM
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	ssc=size(tot_c)
+	tot_bot = fltarr(ssc[1])
+	tot_top = tot_bot
+
+	; extract 2 1d spectra
+	for i=0,ssc[1]-1 do begin
+		; 1d tot intensity for the bottom bright line
+		tot_bot[i] = total(tot_c[i,11:28])
+		; 1d tot intensity for the top bright line
+		tot_top[i] = total(tot_c[i,35:54])
+	endfor
 
 	; test plot some shits
-;	plot,wlen,tot_1d,xr=[4930,5057.5],yr=[-0.1,.5]
-;	oplot,wlen,tot_bot,color=cgcolor('blue')
-;	oplot,wlen,tot_top,color=cgcolor('red')
+	crop = where(wlen1 gt start_wlen and wlen1 lt end_wlen)
+	plot,wlen1[crop],tot1d_a[crop];,xr=[4930,5057.5];,yr=[-0.1,.5]
+	oplot,wlen1[crop],tot_bot,color=cgcolor('blue')
+	oplot,wlen1[crop],tot_top,color=cgcolor('red')
+	oplot,dindgen(100)*0. + 4981.5,dindgen(100),thick=2;,linestyle=2,color=1
+
+	; save data to files
+	writefits,'stacked/'+date+'/crop/Iall_stack_'+date+'_1d_top_crop_2.fits', tot_top, hta
+	writefits,'stacked/'+date+'/crop/Iall_stack_'+date+'_1d_bot_crop_2.fits', tot_bot, hta
 ;stop
-;	writefits,'stacked/Iall_stack_'+date+'_1d.fits',tot_1d,h
-;	writefits,'stacked/Iall_stack_'+date+'_1dbot.fits',tot_bot,h
-;	writefits,'stacked/Iall_stack_'+date+'_1dtop.fits',tot_top,h
-;stop
-	; read in and rebin all the science spectra and sigma maps
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	; CROP AND REBIN ALL SCIENCE SPECTRA
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	for i=0,n_elements(sci_files)-1 do begin
-		; read in the science spectra
-		spec[*,*,i] = mrdfits(sci_files[i],0,h)
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+		; READ IN SCIENCE SPECTRA
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+		spec[*,*,i] = mrdfits(sci_files[i],0,h)	
+		; the wlen could be slightly different because each header could have
+		; a different value of CRPIX1
+		wlen2 = dindgen(ss[1])*sxpar(h,'CD1_1')+sxpar(h,'CRVAL1')- $
+		   sxpar(h,'CRPIX1')*sxpar(h,'CD1_1')	
+		xrange2=where(wlen2 gt start_wlen and wlen2 lt end_wlen) ;5057.3
 		name = strsplit(sci_files[i],'/.',/extract)
-		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-		; CREATE 1D SCIENCE PRODUCTS 
-		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;		; extract the science data - create 1D spectra
-;		for j=0,ss[1]-1 do spec1d[j,i] = total(spec[j,*,i])
-;		writefits,name[0]+'/'+date+'/'+name[1]+'_1d.fits', spec1d,h
-;		; crop the 1D science spectra
-;		spec1d_c[*,i] = spec1d[xrange,i]
-;		; rebin the 1D science spectra
-;		spec1d_b[*,i] = rebin(spec[xrange,i],num_x)
-;		writefits,name[0]+'/'+date+'/'+name[1]+'_1drebin.fits',spec1d_b,h
-		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-		; CREATE 2D SCIENCE PRODUCTS
-		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-		; crop the science spectra
-		spec_c[*,*,i] = spec[xrange,yrange,i]
-;		writefits,name[0]+'/'+date+'/crop/'+name[2]+'_2d_crop.fits',spec_c[*,*,i],h
+;stop
+		; CROP 2D SCIENCE SPECTRA
+		spec_c[*,*,i] = spec[xrange2,yrange,i]
+		writefits,name[0]+'/'+name[1]+'/crop/'+name[2]+'_crop_2.fits',spec_c[*,*,i],h
 ;		writefits,name[0]+'/'+date+'/noacorr/crop/'+name[3]+'_2d_crop.fits',spec_c[*,*,i],h
-		; rebin the 2d science spectra
-		spec_b[*,*,i] = rebin(spec[xrange,yrange,i],num_x,num_y)
-;		writefits,name[0]+'/'+date+'/rebin/'+name[2]+'_2d_rebin.fits',spec_b[*,*,i],h
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+		; CREATE 1D SCIENCE PRODUCTS -- TOP AND BOTTOM SPECTRA
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+		; extract the science data 
+		name1d=strsplit(sci_files[i],'_',/extract)
+		for j=0,ssc[1]-1 do spec1d_t[j,i] = total(spec_c[j,11:28,i])
+		for j=0,ssc[1]-1 do spec1d_b[j,i] = total(spec_c[j,34:54,i])
+		writefits,name[0]+'/'+date+'/crop/'+name1d[2]+'_stack_'+ $
+				  date+'_1d_top_crop_2.fits',spec1d_t,h
+		writefits,name[0]+'/'+date+'/crop/'+name1d[2]+'_stack_'+ $
+				  date+'_1d_bot_crop_2.fits',spec1d_b,h
+		; rebin the 1D science spectra
+;		spec1d_b[*,i] = rebin(spec[xrange,i],num_x)
+;		writefits,name[0]+'/'+name[1]+'/rebin/'+name[2]+'_1d_rebin.fits',spec1d_b,h
+
+		; REBIN 2D SCIENCE SPECTRA
+		spec_b[*,*,i] = rebin(spec[xrange2,yrange,i],num_x,num_y)
+		writefits,name[0]+'/'+date+'/rebin/'+name[2]+'_rebin_2.fits',spec_b[*,*,i],h
 ;		writefits,name[0]+'/'+date+'/noacorr/rebin/'+name[3]+'_2d_rebin.fits',spec_b[*,*,i],h
 		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-		; read in the sigma maps
+		; READ IN SIGMA MAPS
+		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 		sigs[*,*,i] = mrdfits(sig_files[i],0,h)
 		name = strsplit(sig_files[i],'/.',/extract)
-		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-		; CREATE 2D SIGMA PRODUCTS 
-		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-		; crop the sigma maps to the same range as the science spectra
-		sigs_c[*,*,i] = sigs[xrange,yrange,i]
-;		writefits,name[0]+'/'+date+'/crop/'+name[2]+'_2d_crop.fits',sigs_c[*,*,i],h
+		; CROP 2D SIGMA MAPS TO SAME RANGE AS SCIENCE FRAMES
+		sigs_c[*,*,i] = sigs[xrange2,yrange,i]
+		writefits,name[0]+'/'+date+'/crop/'+name[2]+'_crop_2.fits',sigs_c[*,*,i],h
 ;		writefits,name[0]+'/'+date+'/noacorr/crop/'+name[3]+'_2d_crop.fits',sigs_c[*,*,i],h
-		; rebin the sigma maps for 2D
-sigs_b2=sigs_b
+		; REBIN 2D SIGMA MAPS
 		sigs_b[*,*,i] = sqrt(rebin(sigs_c[*,*,i]^2,num_x,num_y))/sqrt(bx*by)
-;		writefits,name[0]+'/'+date+'/rebin/'+name[2]+'_2d_rebin.fits',sigs_b[*,*,i],h
+		writefits,name[0]+'/'+date+'/rebin/'+name[2]+'_rebin_2.fits',sigs_b[*,*,i],h
 ;		writefits,name[0]+'/'+date+'/noacorr/rebin/'+name[3]+'_2d_rebin.fits',sigs_b[*,*,i],h
 		for j=0,num_x-1 do begin
 			for k=0,num_y-1 do begin
@@ -246,8 +298,9 @@ sigs_b2=sigs_b
 ;		for j=0,num_x-1 do begin
 ;			sigs1d_b2[j,i] = sqrt(total(sigs_c[0+j*bx:0+(j+1)*bx-1,*,i]^2))
 ;		endfor
-	endfor
-stop
+
+	endfor	
+;stop
 ;	openw,out,'MC_error68_'+date,/get_lun
 	; Calculate the measured POLARIZATION
 	for i=0,num_x-1 do begin
@@ -269,7 +322,7 @@ stop
 	endfor
 ;	close,out
 ;	free_lun,out
-stop
+;stop
 	; WRITE 1D DATA TO FILE
 ;	writefits,'pol_products/MC_polstn68_'+date+'_1d.fits',pol1d/perr1d[*,0]
 ;	writefits,'pol_products/MC_polstn95_'+date+'_1d.fits',pol1d/perr1d[*,1]
@@ -277,10 +330,10 @@ stop
 ;	writefits,'pol_products/MC_sigma95_'+date+'_1d.fits',perr1d[*,1]
 ;	writefits,'pol_products/pol_'+date+'_1d.fits',pol1d
 	; WRITE 2D DATA TO FILE
-	writefits,'pol_products/MC_polstn68_'+date+'_noacorr.fits',pol/perr[*,*,0]
-	writefits,'pol_products/MC_polstn95_'+date+'_noacorr.fits',pol/perr[*,*,1]
-	writefits,'pol_products/MC_sigma68_'+date+'_noacorr.fits',perr[*,*,0]
-	writefits,'pol_products/MC_sigma95_'+date+'_noacorr.fits',perr[*,*,1]
+	writefits,'pol_products/MC_polstn68_'+date+'_2.fits',pol/perr[*,*,0]
+	writefits,'pol_products/MC_polstn95_'+date+'_2.fits',pol/perr[*,*,1]
+	writefits,'pol_products/MC_sigma68_'+date+'_2.fits',perr[*,*,0]
+	writefits,'pol_products/MC_sigma95_'+date+'_2.fits',perr[*,*,1]
 	writefits,'pol_products/pol_'+date+'_2.fits',pol
 stop
 
