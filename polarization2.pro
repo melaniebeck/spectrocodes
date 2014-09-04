@@ -1,3 +1,38 @@
+pro crop, imgs
+	; define the proper wavelength range
+	start_wlen = 4930.
+	end_wlen = 5032.
+	for i=0,n_elements(imgs)-1 do begin
+		; read in a science frame
+		temp=mrdfits(imgs[i],0,h)
+		name=strsplit(imgs[i],'/.',/extract)
+		ss = size(temp)
+		; generate wavelength range for this science frame
+		wlen = dindgen(ss[1])*sxpar(h,'CD1_1')+sxpar(h,'CRVAL1')- $
+		   		sxpar(h,'CRPIX1')*sxpar(h,'CD1_1')
+		; define x range to crop to
+		xrange=where(wlen gt start_wlen and wlen lt end_wlen)
+		; crop the science frame
+		img_crop = temp[xrange,4:73]
+		; save this file for later 
+		writefits,'stacked/715/crop/'+name[2]+'_crop.fits',img_crop,h
+	endfor
+end
+
+pro rebin, imgs, x, y, SIG=sig
+	; define the proper wavelength range
+	for i=0,n_elements(imgs)-1 do begin
+		; read in a science frame
+		temp=mrdfits(imgs[i],0,h)
+		ss=size(temp)
+		name=strsplit(imgs[i],'/.',/extract)
+		; crop the science frame
+		if keyword_set(sig) then img_bin = sqrt(rebin(temp^2,ss[1]/x,ss[2]/y))/sqrt(x*y) $
+			else img_bin = rebin(temp,ss[1]/x,ss[2]/y)
+		; save this file for later 
+		writefits,'stacked/715/rebin/'+name[2]+'_rebin.fits',img_bin,h
+	endfor
+end
 ; calculate polarization the ESO/Claudia/Matt way
 function polcalc1, flux
 	q = 0.5*(flux[0]-flux[4])/(flux[0]+flux[4])	- $
@@ -71,39 +106,44 @@ function mc_sim, hwps, sigs, pol, coord, date, PLOT=PLOT
 		endelse		
 ;		device,filename=name,/color,/encap
 		; plot the histogram of simulated polarizations
-		plothist,sim_p,xhist,yhist,bin=0.01,/fill,fcolor=230,xr=[0,1.], $
-				 xtit='Polarization fraction'
+		plothist, sim_p, xhist, yhist, bin=0.01, /fill, xr=[0,1.], $
+				 ;xtit='Polarization fraction'
+				  charsize=1.5, charthick=4, thick=1, xthick=4, ythick=4, $
+				  fcolor=cgcolor('yellow'), peak=500.
 		; overplot the mean and median of the simulated polarization dist
-		oplot,yhist*0.+avg,yhist,thick=2,color=cgcolor('red')
-		oplot,yhist*0.+med,yhist,thick=2,color=cgcolor('green')
+		oplot,yhist*0.+avg,yhist,thick=3,color=cgcolor('red')
+		oplot,yhist*0.+med,yhist,thick=3,color=cgcolor('green')
 		; overplot the original measured polarization
-		oplot,yhist*0.+pol,yhist,thick=2,color=cgcolor('black') 
+		oplot,yhist*0.+pol,yhist,thick=3,color=cgcolor('black') 
 		; overplot the avg sim pol +- std of the histogram
-		oplot,yhist*0.+(avg+std),yhist,thick=2,linestyle=1,color=cgcolor('blue')
-		oplot,yhist*0.+(avg-std),yhist,thick=2,linestyle=1,color=cgcolor('blue')
+		oplot,yhist*0.+(avg+std),yhist,thick=3,linestyle=1,color=cgcolor('blue')
+		oplot,yhist*0.+(avg-std),yhist,thick=3,linestyle=1,color=cgcolor('blue')
 		; overplot the avg sim pol +- 2*std of the histogram
-		oplot,yhist*0.+(avg+2*std),yhist,thick=2,linestyle=1, $
+		oplot,yhist*0.+(avg+2*std),yhist,thick=3,linestyle=1, $
 			  color=cgcolor('magenta')
-		oplot,yhist*0.+(avg-2*std),yhist,thick=2,linestyle=1, $
+		oplot,yhist*0.+(avg-2*std),yhist,thick=3,linestyle=1, $
 			  color=cgcolor('magenta')
 		; overplot the percentiles of the histogram
-;		oplot,yhist*0.+percent[2],yhist,thick=2,linestyle=3, $
+;		oplot,yhist*0.+percent[2],yhist,thick=3,linestyle=3, $
 ;			  color=cgcolor('orange')
-    	oplot,yhist*0.+percent[1],yhist,thick=2,linestyle=2, $
+    	oplot,yhist*0.+percent[1],yhist,thick=3,linestyle=2, $
 			  color=cgcolor('blue')
-   		oplot,yhist*0.+percent[3],yhist,thick=2,linestyle=2, $
+   		oplot,yhist*0.+percent[3],yhist,thick=3,linestyle=2, $
 			  color=cgcolor('blue')
- 		oplot,yhist*0.+percent[0],yhist,thick=2,linestyle=2, $
+ 		oplot,yhist*0.+percent[0],yhist,thick=3,linestyle=2, $
 			  color=cgcolor('magenta')
- 		oplot,yhist*0.+percent[4],yhist,thick=2,linestyle=2, $
+ 		oplot,yhist*0.+percent[4],yhist,thick=3,linestyle=2, $
 			  color=cgcolor('magenta')
 
 		items = ['Raw P', 'Mean', 'Median', 'Geom (68%)', 'Geom (95%)', $
 				 'PDF (68%)', 'PDF (95%)']
+;		items = ['Raw P', 'Mean', 'Median', '1 Sigma (68%)', '2 Sigma (95%)']
 		lines = [0,0,0,1,1,2,2]
 		colors = [cgcolor('black'), cgcolor('red'), cgcolor('green'), cgcolor('blue'), $
-				 cgcolor('magenta'), cgcolor('blue'), cgcolor('magenta')]
-		al_legend,items, linestyle=lines,color=colors,linsize=.5,/right
+				  cgcolor('magenta'), cgcolor('blue'), cgcolor('magenta')] ;cgcolor('magenta'),
+		al_legend, items, linestyle=lines, color=colors, linsize=.5, /right, $
+				   background_color=cgcolor('white'), bthick=4, charsize=1.2, $
+				   charthick=3, thick=4
 		device,/close
 		set_plot,'X
 ;stop
@@ -149,7 +189,7 @@ pro pol2d, date, TWOD=twod
 	; number of total bins in x and y directions
 	num_x = (n_elements(xrange))/bx		
 	num_y = (n_elements(yrange))/by
-stop
+;stop
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	; declare variables for science spectra binning
 	spec=fltarr(ss[1],ss[2],n_elements(sci_files))
@@ -171,14 +211,24 @@ stop
 	perr = fltarr(num_x,num_y,2)	
 	pol1d = fltarr(num_x)
 	perr1d = fltarr(num_x,2)
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-	; CROP & REBIN 2D TOTAL INTENSITY SPECTRUM 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 	tot_a = mrdfits('stacked/'+date+'/Iall_stack_'+date+'_2d.fits',0,hta)
+	tot_a_sig = mrdfits('stacked/'+date+'/Iall_stack_'+date+'_2d_sig.fits',0,htas)
 	ss = size(tot_a)
 	tot1d_a = fltarr(ss[1])
 	tot_c = fltarr(num_x*bx,num_y*by)
 	tot_d = fltarr(num_x,num_y)
+
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	; CROP & REBIN 2D TOTAL INTENSITY SPECTRUM 
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	spawn,'ls stacked/715/I*stack_715_2d_*sum.fits > stacked.list'
+	readcol,'stacked.list',totes,format='a'
+	crop,totes
+
+	spawn,'ls stacked/715/crop/I*stack*sum_crop.fits > stacked.list'
+	readcol,'stacked.list',totes,format='a'
+	rebin,totes, bx, by
 
 	; wavelength range of 2d spectrum
 	wlen1 = dindgen(ss[1])*sxpar(hta,'CD1_1')+sxpar(hta,'CRVAL1')- $
@@ -186,28 +236,10 @@ stop
 	; x range of 2d spectrum to look at
 	xrange1=where(wlen1 gt start_wlen and wlen1 lt end_wlen)
 
-	; extract 1d spectrum for use later
-	for i=0,ss[1]-1 do tot1d_a[i]=total(tot_a[i,4:73])
-	writefits,'stacked/'+date+'/Iall_stack_'+date+'_1d_2.fits',tot1d_a,hta
-;stop
-	; test wlen range with some plots
-	plot,wlen1,tot1d_a,xr=[4800,5200]
-	oplot,dindgen(100)*0. + 4981.5,dindgen(100),thick=2;,linestyle=2,color=1
 
-	; crop the 2d total intensity spectrum
-	tot_c = tot_a[xrange1,4:73]
-	; rebin the 2d tot int spectrum
-	tot_b = rebin(tot_a[xrange1,4:73],num_x,num_y)
-
-	writefits,'stacked/'+date+'/crop/Iall_stack_'+date+'_2d_crop_2.fits',tot_c,hta
-	writefits,'stacked/'+date+'/rebin/Iall_stack_'+date+'_2d_rebin_2.fits',tot_b,hta
-;stop
-;	writefits,'stacked/'+date+'/noacorr/crop/Iall_stack_noacorr_2d_crop.fits',tot_c,ht
-;	writefits,'stacked/'+date+'/noacorr/rebin/Iall_stack_noacorr_2d_rebin.fits',tot_b,ht
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	; CREATE 1D TOTAL INTENSITY SPECTRA -- TOP AND BOTTOM
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	ssc=size(tot_c)
 	tot_bot = fltarr(ssc[1])
 	tot_top = tot_bot
@@ -313,10 +345,9 @@ stop
 		for j=0,num_y-1 do begin
 			; calculate the polarization for the 2D data
 			pol[i,j] = polcalc1(spec_b[i,j,*])
-			if (i eq 10 and j eq 5) or (i eq 11 and (j eq 4 or j eq 2)) or $
-			   (i eq 12 and (j eq 1 or j eq 3)) or (i eq 5 and j eq 4) then perr[i,j,*] =  $
-			   mc_sim(spec_b[i,j,*],sigs_b[i,j,*],pol[i,j],[i,j],date,/plot) $
-			else perr[i,j,*] = mc_sim(spec_b[i,j,*], sigs_b[i,j,*], pol[i,j])
+			if (i eq 10 or i eq 8) then  $
+				perr[i,j,*] = mc_sim(spec_b[i,j,*],sigs_b[i,j,*],pol[i,j],[i,j],date,/plot) ;$
+;			else perr[i,j,*] = mc_sim(spec_b[i,j,*], sigs_b[i,j,*], pol[i,j])
 ;			printf,out,perr[i,j,0]
 		endfor
 	endfor

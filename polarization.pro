@@ -88,11 +88,11 @@ end
 
 pro pol2d, date
 	; read in ord/ext beams
-;	spawn,'ls stacked/'+date+'/[A,B]*_stack_*'+date+'.fits > stacked_sci.list'
+	spawn,'ls stacked/'+date+'/[A,B]*_stack_*'+date+'_2d.fits > stacked_sci.list'
 	readcol,'stacked_sci.list',format='a',sci_files
 
 	; read in total intensity images
-;	spawn,'ls stacked/'+date+'/I*_stack_*'+date+'.fits > stacked_int.list'
+	spawn,'ls stacked/'+date+'/I*_stack_*'+date+'_2d.fits > stacked_int.list'
 	readcol,'stacked_int.list',format='a',int_files	
 
 	; read in a test file to determine wavelength range(s)
@@ -162,6 +162,7 @@ pro pol2d, date
 		sig[i] = sigma(tot[srange,yrange,i]) 
 		; S/N PER PIXEL of each science frame
 ;		stn_pp[*,*,i] = tot_c[*,*,i]/sig[i]			;;; write to file??
+stop
 	endfor
 
 	for i=0,n_elements(sci_files)-1 do begin
